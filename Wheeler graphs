@@ -1,0 +1,2 @@
+# This is an implementation of Wheeler graphs implemented in language Rust.
+# It supports FM-index and prefix free parsing
