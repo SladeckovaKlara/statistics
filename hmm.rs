@@ -22,15 +22,23 @@ struct HMM {
     initial_log_probs: Vec<f64>,
     transition_log_probs: Vec<Vec<f64>>,
     emission_log_probs: Vec<Vec<f64>>,
+    end_log_probs: Vec<f64>,
 }
 
 impl HMM {
-    
     //define new markov model 
     fn new( initial_log_probs: Vec<f64>, transition_log_probs: Vec<Vec<f64>>, emission_log_probs: Vec<Vec<f64>>) -> Self {
         let num_states = initial_log_probs.len();
         let num_obs = emission_log_probs[0].len();
-        HMM {num_states, num_obs, initial_log_probs, transition_log_probs, emission_log_probs}
+        let end_log_probs =  vec![0.0; initial_log_probs.len()];
+        HMM {num_states, num_obs, initial_log_probs, transition_log_probs, emission_log_probs, end_log_probs}
+    }
+    
+    //define new markov model 
+    fn new_with_end( initial_log_probs: Vec<f64>, transition_log_probs: Vec<Vec<f64>>, emission_log_probs: Vec<Vec<f64>>, end_log_probs: Vec<f64>) -> Self {
+        let num_states = initial_log_probs.len();
+        let num_obs = emission_log_probs[0].len();
+        HMM {num_states, num_obs, initial_log_probs, transition_log_probs, emission_log_probs, end_log_probs}
     }
     
     // Function to compute the log probability of an observation sequence using the forward algorithm
@@ -62,9 +70,9 @@ impl HMM {
    fn backward(&self, observations: &[usize]) -> Vec<Vec<f64>> {
         let mut beta = vec![vec![0.0; self.num_states]; observations.len()];
         
-        // Initialize the last column of the beta matrix
+        // Initialize the last column of the beta matrix with end probabilites
         for s in 0..self.num_states {
-            beta[observations.len() - 1][s] = 0.0; 
+            beta[observations.len() - 1][s] = self.end_log_probs[s];             
         }
         
         // Iterate over the remaining columns of the beta matrix
@@ -108,6 +116,10 @@ impl HMM {
                     
                 trellis[t][s] = max_log_prob;
                 backpointers[t][s] = max_prev_s;
+                
+                if t == observations.len()-1 {
+                    trellis[t][s] += self.end_log_probs[s];
+                }
             }
         }
         
@@ -214,12 +226,18 @@ impl HMM {
 
 //simple tests and example usage for viterbi, forward, backward and baum_welch function
 
-//#[cfg(test)]
-mod tests {
+#[cfg(test)]
+ mod tests {
     use super::*;
     
+    /* pi is inital probabilities matrix
+     * a is transtition probabilities matrix
+     * b is emission probabilities matrix 
+     * omega is end probabilities matrix*/
+    
+    
     #[test]
-    fn test_viterbi() {
+    fn test_viterbi1() {
         
         // We construct an example from Borodovsky & Ekisheva (2006), pp. 80.
         // http://cecas.clemson.edu/~ahoover/ece854/refs/Gonze-ViterbiAlgorithm.pdf
@@ -245,6 +263,35 @@ mod tests {
         assert_eq!(expected, path);
         
         assert!((4.25e-8_f64.ln() - prob).abs() < 0.001);
+    }
+    
+    #[test]
+    //testing zero probabilities and end probabilities
+    fn test_viterbi2() {
+        let pi = vec![0.34f64.ln(), 0.33f64.ln(), 0.33f64.ln()];
+        
+        let a = vec![
+            vec![0.7f64.ln(), 0.3f64.ln(), 0.0f64.ln()], 
+            vec![0.0f64.ln(), 0.4f64.ln(), 0.6f64.ln()],
+            vec![0.5f64.ln(), 0.0f64.ln(), 0.5f64.ln()]
+        ];
+        
+        let b = vec![
+            vec![0.3f64.ln(), 0.7f64.ln()], 
+            vec![0.9f64.ln(), 0.1f64.ln()], 
+            vec![0.4f64.ln(), 0.6f64.ln()]
+        ];
+        
+        let omega = vec![0.2f64.ln(), 0.8f64.ln(), 0.0f64.ln()];
+
+        let hmm = HMM::new_with_end(pi, a, b, omega);
+        let (path, prob, _) = hmm.viterbi_max(&[1, 0, 0]);
+        
+        let expected = vec![0, 1, 1];
+        
+        assert_eq!(expected, path);
+        
+        assert!((185e-4_f64.ln() - prob).abs() < 0.001);
     }
     
     #[test]
@@ -375,7 +422,7 @@ mod tests {
             .collect::<Vec<f64>>();
         
             
-        assert!(flatten_pi
+         assert!(flatten_pi
             .iter()
             .zip(test_pi.iter())
             .all(|(x, y)| (x-y).abs() < 0.001)
@@ -395,9 +442,9 @@ mod tests {
     }
 }
 
-fn main() {
-    
-    test_viterbi();
+fn main() {    
+    test_viterbi1();
+    test_viterbi2();
     test_forward_equals_backward();
     test_baum_welch();
     test_baum_welch2();
